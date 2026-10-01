@@ -1,3 +1,5 @@
+import * as lector from "./lector.js";
+
 const $ = (id) => document.getElementById(id);
 
 const ESTADOS = {
@@ -14,7 +16,7 @@ const st = {
   mensajes: [],
   filtro: "sin-leer",
   seleccion: null,
-  fuente: null,
+  ciclo: 0,
   nuevos: new Set(),
   animarEntrada: false,
   resumenPrevio: {},
@@ -29,24 +31,11 @@ const formatoNumero = new Intl.NumberFormat("es", { minimumFractionDigits: 2, ma
 const espera = (ms) => new Promise((r) => setTimeout(r, ms));
 const sinMovimiento = () => matchMedia("(prefers-reduced-motion: reduce)").matches;
 
-// ---------- API ----------
-async function api(ruta, opciones = {}) {
-  const res = await fetch(ruta, {
-    ...opciones,
-    headers: { "Content-Type": "application/json" },
-    body: opciones.body ? JSON.stringify(opciones.body) : undefined,
-  });
-  const datos = await res.json().catch(() => ({}));
-  if (!res.ok) throw new Error(datos.error || `Error ${res.status}`);
-  return datos;
-}
-
 // ---------- Carga de directos ----------
-async function cargarListaStreams() {
-  const streams = await api("/api/streams");
+function cargarListaStreams() {
   const select = $("select-stream");
   select.replaceChildren(new Option("Directos guardados…", ""));
-  for (const s of streams) {
+  for (const s of lector.listStreams()) {
     const nombre = s.titulo || s.id;
     const op = new Option(`${nombre} — ${s.sin_leer} sin leer / ${s.total}`, s.id);
     select.add(op);
@@ -54,65 +43,55 @@ async function cargarListaStreams() {
   select.value = st.streamId ?? "";
 }
 
-async function abrirStream(id) {
+function abrirStream(id) {
   if (!id) return;
+  const stream = lector.getStream(id);
+  if (!stream) throw new Error("Directo no encontrado");
   st.streamId = id;
   st.seleccion = null;
   st.nuevos.clear();
   st.resumenPrevio = {};
   st.animarEntrada = true;
   if (location.hash.slice(1) !== id) history.replaceState(null, "", `#${id}`);
-  st.mensajes = await api(`/api/streams/${id}/mensajes`);
-  st.stream = await api(`/api/streams/${id}`);
-  conectarEventos(id);
+  st.mensajes = lector.listMensajes(id);
+  st.stream = stream;
+  leerEnBucle(id, ++st.ciclo);
   pintarStream();
   pintarLista();
   cargarListaStreams();
 }
 
-function conectarEventos(id) {
-  st.fuente?.close();
-  const fuente = new EventSource(`/api/streams/${id}/eventos`);
-  st.fuente = fuente;
-
-  fuente.addEventListener("mensaje", (e) => {
-    const m = JSON.parse(e.data);
-    if (st.mensajes.some((x) => x.id === m.id)) return;
-    st.mensajes.push(m);
-    st.mensajes.sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
-    st.nuevos.add(m.id);
-    pintarLista();
-  });
-
-  fuente.addEventListener("actualizado", (e) => {
-    const m = JSON.parse(e.data);
-    const i = st.mensajes.findIndex((x) => x.id === m.id);
-    if (i >= 0 && st.mensajes[i].leido !== m.leido) {
-      st.mensajes[i] = m;
-      pintarLista();
+// Mientras esta página está abierta se lee el chat un bloque tras otro. Cada paso
+// trae los Super Chats nuevos y cuánto esperar hasta el siguiente.
+async function leerEnBucle(id, ciclo) {
+  while (st.ciclo === ciclo) {
+    let esperaMs = 5000;
+    try {
+      const r = await lector.avanzar(id);
+      if (st.ciclo !== ciclo) return;
+      agregarNuevos(r.nuevos);
+      st.stream = lector.getStream(id);
+      pintarStream();
+      if (r.esperaMs == null) return; // ya no está escuchando
+      esperaMs = r.esperaMs;
+    } catch {
+      // Falló la red o el servidor: se vuelve a intentar en unos segundos.
     }
-  });
+    await espera(esperaMs);
+  }
+}
 
-  fuente.addEventListener("stream", (e) => {
-    st.stream = JSON.parse(e.data);
-    pintarStream();
-  });
-
-  fuente.addEventListener("recargar", async () => {
-    st.mensajes = await api(`/api/streams/${id}/mensajes`);
-    pintarLista();
-  });
-
-  // EventSource reintenta solo; al reconectar volvemos a pedir la lista
-  // por si se perdió algún mensaje mientras estaba caído.
-  let caido = false;
-  fuente.addEventListener("error", () => { caido = true; });
-  fuente.addEventListener("open", async () => {
-    if (!caido) return;
-    caido = false;
-    st.mensajes = await api(`/api/streams/${id}/mensajes`);
-    pintarLista();
-  });
+function agregarNuevos(nuevos) {
+  let hubo = false;
+  for (const m of nuevos ?? []) {
+    if (st.mensajes.some((x) => x.id === m.id)) continue;
+    st.mensajes.push(m);
+    st.nuevos.add(m.id);
+    hubo = true;
+  }
+  if (!hubo) return;
+  st.mensajes.sort((a, b) => a.timestamp - b.timestamp || a.id.localeCompare(b.id));
+  pintarLista();
 }
 
 // ---------- Pintado ----------
@@ -342,10 +321,10 @@ async function marcar(id, leido) {
   const m = st.mensajes.find((x) => x.id === id);
   if (!m) return;
   const anterior = m.leido;
-  m.leido = leido ? 1 : 0;
+  m.leido = leido;
   pintarLista();
   try {
-    Object.assign(m, await api(`/api/mensajes/${encodeURIComponent(id)}`, { method: "PATCH", body: { leido } }));
+    Object.assign(m, lector.setLeido(st.streamId, id, leido));
   } catch (err) {
     m.leido = anterior;
     pintarLista();
@@ -407,8 +386,8 @@ function mostrarToast(texto, deshacer) {
 
 async function marcarHasta(timestamp) {
   try {
-    await api(`/api/streams/${st.streamId}/marcar-hasta`, { method: "POST", body: { timestamp } });
-    st.mensajes = await api(`/api/streams/${st.streamId}/mensajes`);
+    lector.marcarHasta(st.streamId, timestamp);
+    st.mensajes = lector.listMensajes(st.streamId);
     pintarLista();
   } catch (err) {
     mostrarError(err.message);
@@ -607,9 +586,9 @@ $("form-url").addEventListener("submit", async (e) => {
   const boton = e.submitter;
   boton.disabled = true;
   try {
-    const stream = await api("/api/streams", { method: "POST", body: { url: $("input-url").value } });
+    const stream = await lector.escuchar($("input-url").value);
     $("input-url").value = "";
-    await abrirStream(stream.id);
+    abrirStream(stream.id);
   } catch (err) {
     mostrarError(err.message);
   } finally {
@@ -620,7 +599,7 @@ $("form-url").addEventListener("submit", async (e) => {
 $("select-stream").addEventListener("change", (e) => abrirStream(e.target.value));
 
 $("btn-detener").addEventListener("click", async () => {
-  st.stream = await api(`/api/streams/${st.streamId}/stop`, { method: "POST" });
+  st.stream = lector.detener(st.streamId);
   pintarStream();
 });
 
@@ -648,6 +627,13 @@ document.addEventListener("keydown", (e) => {
 });
 
 // ---------- Inicio ----------
-await cargarListaStreams();
+lector.siFallaGuardado(mostrarError);
+cargarListaStreams();
 const inicial = location.hash.slice(1);
-if (inicial) abrirStream(inicial).catch(() => history.replaceState(null, "", location.pathname));
+if (inicial) {
+  try {
+    abrirStream(inicial);
+  } catch {
+    history.replaceState(null, "", location.pathname);
+  }
+}

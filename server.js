@@ -1,99 +1,64 @@
+// El servidor solo hace de intermediario con YouTube (el navegador no puede
+// pedirle el chat directamente). No guarda nada: los directos, los Super Chats
+// y lo marcado como leído viven en el navegador (ver public/lector.js).
 import express from "express";
 import { fileURLToPath } from "node:url";
 import path from "node:path";
-import * as db from "./src/db.js";
-import * as lector from "./src/chatReader.js";
+import { ErrorYouTube, obtenerSesion, pedirChat } from "./src/youtubeLive.js";
 
 const PUERTO = Number(process.env.PORT) || 3000;
 const app = express();
 const raiz = path.dirname(fileURLToPath(import.meta.url));
 
 app.use(express.json());
+// En Vercel la carpeta public/ se sirve sola; esto es para correrlo en local.
 app.use(express.static(path.join(raiz, "public")));
-app.use("/assets", express.static(path.join(raiz, "Assets")));
 
-app.get("/api/streams", (_req, res) => {
-  res.json(db.listStreams());
-});
-
-app.post("/api/streams", async (req, res) => {
-  const videoId = lector.extraerVideoId(req.body?.url);
-  if (!videoId) {
-    return res.status(400).json({ error: "No reconozco ese link. Pega la URL del directo de YouTube." });
+// Abre la página del directo y devuelve lo necesario para leer su chat.
+app.post("/api/sesion", async (req, res) => {
+  const videoId = req.body?.videoId;
+  if (typeof videoId !== "string" || !/^[\w-]{11}$/.test(videoId)) {
+    return res.status(400).json({ error: "Id de video inválido", final: true });
   }
-  await lector.escuchar(videoId);
-  res.json(db.getStream(videoId));
+  try {
+    res.json(await obtenerSesion(videoId));
+  } catch (err) {
+    responderError(res, err);
+  }
 });
 
-app.get("/api/streams/:id", (req, res) => {
-  const stream = db.getStream(req.params.id);
-  if (!stream) return res.status(404).json({ error: "Directo no encontrado" });
-  res.json(stream);
+// Pide el siguiente bloque del chat a partir de una continuación.
+app.post("/api/chat", async (req, res) => {
+  const { apiKey, clientVersion, continuation } = req.body ?? {};
+  if (![apiKey, clientVersion, continuation].every((v) => typeof v === "string" && v)) {
+    return res.status(400).json({ error: "Sesión de chat incompleta" });
+  }
+  try {
+    res.json(await pedirChat({ apiKey, clientVersion, continuation }));
+  } catch (err) {
+    responderError(res, err);
+  }
 });
 
-app.post("/api/streams/:id/stop", (req, res) => {
-  lector.detener(req.params.id);
-  res.json(db.getStream(req.params.id) ?? null);
-});
-
-app.get("/api/streams/:id/mensajes", (req, res) => {
-  res.json(db.listMensajes(req.params.id));
-});
-
-app.patch("/api/mensajes/:id", (req, res) => {
-  if (!db.getMensaje(req.params.id)) return res.status(404).json({ error: "Mensaje no encontrado" });
-  const mensaje = db.setLeido(req.params.id, Boolean(req.body?.leido));
-  lector.eventos.emit("mensaje-actualizado", mensaje);
-  emitirStream(mensaje.stream_id);
-  res.json(mensaje);
-});
-
-app.post("/api/streams/:id/marcar-hasta", (req, res) => {
-  const timestamp = Number(req.body?.timestamp);
-  if (!Number.isFinite(timestamp)) return res.status(400).json({ error: "timestamp inválido" });
-  const cambiados = db.marcarHasta(req.params.id, timestamp);
-  lector.eventos.emit("recargar", req.params.id);
-  emitirStream(req.params.id);
-  res.json({ cambiados });
-});
-
-app.get("/api/streams/:id/eventos", (req, res) => {
-  const streamId = req.params.id;
-  res.writeHead(200, {
-    "Content-Type": "text/event-stream",
-    "Cache-Control": "no-cache",
-    Connection: "keep-alive",
+function responderError(res, err) {
+  if (!(err instanceof ErrorYouTube)) throw err;
+  res.status(502).json({
+    error: err.message,
+    final: err.final,
+    terminado: Boolean(err.terminado),
+    info: err.info ?? null,
   });
-  const enviar = (tipo, datos) => res.write(`event: ${tipo}\ndata: ${JSON.stringify(datos)}\n\n`);
-
-  const onMensaje = (m) => m.stream_id === streamId && enviar("mensaje", m);
-  const onActualizado = (m) => m.stream_id === streamId && enviar("actualizado", m);
-  const onStream = (s) => s.id === streamId && enviar("stream", s);
-  const onRecargar = (id) => id === streamId && enviar("recargar", {});
-
-  lector.eventos.on("mensaje", onMensaje);
-  lector.eventos.on("mensaje-actualizado", onActualizado);
-  lector.eventos.on("stream", onStream);
-  lector.eventos.on("recargar", onRecargar);
-  const latido = setInterval(() => res.write(": ping\n\n"), 25000);
-
-  const stream = db.getStream(streamId);
-  if (stream) enviar("stream", stream);
-
-  req.on("close", () => {
-    clearInterval(latido);
-    lector.eventos.off("mensaje", onMensaje);
-    lector.eventos.off("mensaje-actualizado", onActualizado);
-    lector.eventos.off("stream", onStream);
-    lector.eventos.off("recargar", onRecargar);
-  });
-});
-
-function emitirStream(id) {
-  const stream = db.getStream(id);
-  if (stream) lector.eventos.emit("stream", stream);
 }
 
-app.listen(PUERTO, "127.0.0.1", () => {
-  console.log(`Lector de Super Chats listo en http://localhost:${PUERTO}`);
+app.use((err, _req, res, _next) => {
+  console.error(err);
+  res.status(500).json({ error: err.message || "Error del servidor" });
 });
+
+if (!process.env.VERCEL) {
+  app.listen(PUERTO, () => {
+    console.log(`Lector de Super Chats listo en http://localhost:${PUERTO}`);
+  });
+}
+
+export default app;
