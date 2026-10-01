@@ -1,0 +1,110 @@
+<!doctype html>
+<html lang="es">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Lector de Super Chats</title>
+  <link rel="icon" href="/assets/logo.jpg">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Anton&family=Barlow:wght@400;500;600;700&family=Barlow+Condensed:wght@600;700&display=swap">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+  <div class="decoracion" aria-hidden="true">
+    <span class="triangulos"></span>
+    <span class="pizarra"></span>
+  </div>
+
+  <header class="barra">
+    <div class="marca">
+      <img src="/assets/logo.jpg" alt="TR" class="logo">
+      <div>
+        <p class="marca-titulo">Super Chats</p>
+        <p class="marca-sub">Lector del directo</p>
+      </div>
+    </div>
+    <form id="form-url" class="form-url">
+      <input id="input-url" type="text" placeholder="Pega el link del directo de YouTube" autocomplete="off" required>
+      <button type="submit">Escuchar</button>
+    </form>
+    <div class="fila">
+      <select id="select-stream" aria-label="Directos guardados">
+        <option value="">Directos guardados…</option>
+      </select>
+      <span id="estado" class="estado" hidden></span>
+      <button id="btn-detener" class="secundario" hidden>Detener</button>
+    </div>
+    <p id="error" class="error" hidden></p>
+  </header>
+
+  <section id="cabecera-stream" class="cabecera" hidden>
+    <div>
+      <h1 id="titulo"></h1>
+      <p id="canal" class="tenue"></p>
+    </div>
+    <p id="contador" class="contador"></p>
+  </section>
+
+  <nav id="controles" class="controles" hidden>
+    <div class="filtros" role="tablist">
+      <button data-filtro="sin-leer" class="activo">Sin leer</button>
+      <button data-filtro="todos">Todos</button>
+      <button data-filtro="leidos">Leídos</button>
+    </div>
+    <button id="btn-primero" class="secundario">Ir al primero sin leer</button>
+  </nav>
+
+  <p id="pista" class="pista" hidden>Desliza un mensaje hacia la derecha para marcarlo como leído →</p>
+
+  <main id="lista" class="lista"></main>
+
+  <p id="vacio" class="vacio" hidden></p>
+
+  <footer class="ayuda tenue">
+    Atajos: <kbd>J</kbd>/<kbd>K</kbd> moverse · <kbd>Espacio</kbd> marcar leído y pasar al siguiente · <kbd>U</kbd> desmarcar
+  </footer>
+
+  <aside id="resumen" class="resumen" hidden>
+    <button id="resumen-barra" class="resumen-barra" type="button" aria-expanded="false" aria-controls="resumen-detalle">
+      <span class="resumen-rayo" aria-hidden="true"></span>
+      <span class="resumen-cifras">
+        <span><b id="r-sin-leer">0</b> sin leer</span>
+        <span><b id="r-leidos">0</b> leídos</span>
+        <span class="r-total-corto"><b id="r-total">0</b> en total</span>
+      </span>
+      <span class="progreso" aria-hidden="true"><span id="r-progreso"></span></span>
+      <span class="resumen-ver">Resumen</span>
+    </button>
+    <div id="resumen-detalle" class="resumen-detalle">
+      <div class="resumen-grid">
+        <section>
+          <h2>Recaudado</h2>
+          <ul id="r-montos" class="r-montos"></ul>
+        </section>
+        <section>
+          <h2>Tipo</h2>
+          <p class="r-linea"><b id="r-chats">0</b> Super Chats</p>
+          <p class="r-linea"><b id="r-stickers">0</b> Super Stickers</p>
+          <p class="r-linea"><b id="r-ritmo">—</b></p>
+        </section>
+        <section>
+          <h2>Más generosos</h2>
+          <ol id="r-top" class="r-top"></ol>
+        </section>
+        <section>
+          <h2>El más grande</h2>
+          <div id="r-mayor" class="r-mayor"></div>
+        </section>
+      </div>
+    </div>
+  </aside>
+
+  <div id="toast" class="toast" role="status" hidden>
+    <span id="toast-texto"></span>
+    <button id="toast-deshacer" type="button">Deshacer</button>
+  </div>
+
+  <script src="app.js" type="module"></script>
+</body>
+</html>
