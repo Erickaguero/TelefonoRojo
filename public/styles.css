@@ -395,6 +395,21 @@ input:focus, select:focus { box-shadow: var(--sombra-roja); }
   box-shadow: 2px 2px 0 rgba(0, 0, 0, .8);
   transform: rotate(-2deg);
 }
+/* Hito de membresía: mismo chip, en verde y con estrella. */
+.monto.hito { transform: rotate(-1deg); }
+/* Antigüedad como miembro de quien manda un Super Chat. */
+.insignia-miembro {
+  font-family: var(--fuente-cond);
+  font-weight: 700;
+  font-size: 13px;
+  letter-spacing: .02em;
+  padding: 0 7px;
+  border: 1.5px solid #0f9d58;
+  border-radius: 999px;
+  color: #0b7a44;
+  background: rgba(15, 157, 88, .08);
+  white-space: nowrap;
+}
 .hora { font-size: 13px; color: var(--tenue); font-variant-numeric: tabular-nums; }
 .texto { margin: 6px 0 0; white-space: pre-wrap; overflow-wrap: anywhere; font-size: 17px; user-select: text; }
 .sticker { display: block; margin-top: 6px; width: 72px; height: 72px; -webkit-user-drag: none; }

@@ -2,7 +2,7 @@
 
 **Lector de Super Chats**
 
-App web para leer con calma los Super Chats y Super Stickers de un directo de YouTube (de cualquier canal), marcarlos como leídos y verlos en orden cronológico.
+App web para leer con calma los Super Chats, Super Stickers y mensajes de hito de membresía de un directo de YouTube (de cualquier canal), marcarlos como leídos y verlos en orden cronológico.
 
 ## Uso
 
@@ -14,6 +14,7 @@ npm start
 Abre http://localhost:3000, pega el link del directo y pulsa **Escuchar**.
 
 - Los Super Chats nuevos aparecen solos, sin recargar.
+- También aparecen los **hitos de membresía** (el mensaje destacado gratis que YouTube da a los miembros cada mes), en verde con ★, y en cada mensaje se ve **cuánto tiempo lleva como miembro** quien lo envió. Los hitos no suman en "Recaudado" ni en "Más generosos".
 - **Desliza un mensaje hacia la derecha** para marcarlo como leído (con dedo o mouse). Deslizar uno ya leído lo desmarca. Aparece un aviso con **Deshacer** por si fue sin querer.
 - **Marcar hasta aquí** marca ese y todos los anteriores.
 - Abajo hay un **resumen**: sin leer / leídos, recaudado por moneda, top de donantes y el Super Chat más grande.

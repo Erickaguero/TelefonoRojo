@@ -57,7 +57,8 @@ export async function obtenerSesion(videoId) {
 
 /**
  * Pide el siguiente bloque del chat.
- * Devuelve { pagados, continuation, esperaMs, fin }.
+ * Devuelve { destacados, continuation, esperaMs, fin }: los Super Chats,
+ * Super Stickers y mensajes de hito de membresía de ese bloque.
  */
 export async function pedirChat(sesion) {
   const res = await fetch(
@@ -77,57 +78,113 @@ export async function pedirChat(sesion) {
   const cont = chat?.continuations?.[0];
   const siguiente = cont?.invalidationContinuationData ?? cont?.timedContinuationData ?? cont?.reloadContinuationData;
   if (!chat || !siguiente?.continuation) {
-    return { pagados: [], continuation: null, esperaMs: 0, fin: true };
+    return { destacados: [], continuation: null, esperaMs: 0, fin: true };
   }
 
-  const pagados = [];
+  const destacados = [];
   for (const accion of chat.actions ?? []) {
-    for (const renderer of renderersPagados(accion)) {
-      const m = normalizar(renderer);
-      if (m) pagados.push(m);
+    for (const item of itemsDestacados(accion)) {
+      const m = normalizar(item);
+      if (m) destacados.push(m);
     }
   }
   return {
-    pagados,
+    destacados,
     continuation: siguiente.continuation,
     esperaMs: Math.min(Math.max(siguiente.timeoutMs ?? 3000, 1500), 10000),
     fin: false,
   };
 }
 
-function* renderersPagados(accion) {
-  const item = accion.addChatItemAction?.item;
-  if (item?.liveChatPaidMessageRenderer) yield item.liveChatPaidMessageRenderer;
-  if (item?.liveChatPaidStickerRenderer) yield item.liveChatPaidStickerRenderer;
+const COLOR_MIEMBRO = "#0F9D58"; // el verde con que YouTube muestra los hitos de membresía
 
-  // La "cinta" de arriba del chat conserva Super Chats enviados antes de
-  // conectarnos; así recuperamos algunos que se habrían perdido.
+/** Los items del chat que nos interesan; cada uno trae un solo renderer. */
+function* itemsDestacados(accion) {
+  const item = accion.addChatItemAction?.item;
+  if (item) yield item;
+
+  // La "cinta" de arriba del chat conserva Super Chats e hitos enviados antes
+  // de conectarnos; así recuperamos algunos que se habrían perdido.
   const ticker = accion.addLiveChatTickerItemAction?.item;
-  const interno =
-    ticker?.liveChatTickerPaidMessageItemRenderer?.showItemEndpoint?.showLiveChatItemEndpoint?.renderer ??
-    ticker?.liveChatTickerPaidStickerItemRenderer?.showItemEndpoint?.showLiveChatItemEndpoint?.renderer;
-  if (interno?.liveChatPaidMessageRenderer) yield interno.liveChatPaidMessageRenderer;
-  if (interno?.liveChatPaidStickerRenderer) yield interno.liveChatPaidStickerRenderer;
+  const interno = (
+    ticker?.liveChatTickerPaidMessageItemRenderer ??
+    ticker?.liveChatTickerPaidStickerItemRenderer ??
+    ticker?.liveChatTickerSponsorItemRenderer
+  )?.showItemEndpoint?.showLiveChatItemEndpoint?.renderer;
+  if (interno) yield interno;
 }
 
-function normalizar(r) {
+function normalizar(item) {
+  const pagado = item.liveChatPaidMessageRenderer;
+  const sticker = item.liveChatPaidStickerRenderer;
+  // Los avisos de "nuevo miembro" usan el mismo renderer pero sin headerPrimaryText
+  // ("Miembro durante 6 meses"); solo nos quedamos con los hitos.
+  const hito = item.liveChatMembershipItemRenderer?.headerPrimaryText ? item.liveChatMembershipItemRenderer : null;
+  const r = pagado ?? sticker ?? hito;
   if (!r?.id) return null;
-  const esSticker = Boolean(r.sticker);
-  const texto = (r.message?.runs ?? [])
+
+  const base = {
+    id: r.id,
+    autor: r.authorName?.simpleText || "Anónimo",
+    avatar_url: absoluta(ultima(r.authorPhoto?.thumbnails)?.url),
+    texto: textoDe(r.message) || null,
+    sticker_url: null,
+    miembro_meses: mesesDeMiembro(r),
+    timestamp: r.timestampUsec ? Math.floor(Number(r.timestampUsec) / 1000) : Date.now(),
+  };
+  if (hito) {
+    return { ...base, tipo: "miembro", monto_texto: null, color: COLOR_MIEMBRO };
+  }
+  if (sticker) {
+    return {
+      ...base,
+      tipo: "sticker",
+      monto_texto: r.purchaseAmountText?.simpleText ?? null,
+      color: colorHex(r.backgroundColor ?? r.moneyChipBackgroundColor),
+      sticker_url: absoluta(ultima(r.sticker?.thumbnails)?.url),
+    };
+  }
+  return {
+    ...base,
+    tipo: "superchat",
+    monto_texto: r.purchaseAmountText?.simpleText ?? null,
+    color: colorHex(r.headerBackgroundColor ?? r.bodyBackgroundColor),
+  };
+}
+
+function textoDe(t) {
+  if (!t) return "";
+  if (t.simpleText) return t.simpleText.trim();
+  return (t.runs ?? [])
     .map((run) => run.text ?? run.emoji?.shortcuts?.[0] ?? run.emoji?.emojiId ?? "")
     .join("")
     .trim();
-  return {
-    id: r.id,
-    tipo: esSticker ? "sticker" : "superchat",
-    autor: r.authorName?.simpleText || "Anónimo",
-    avatar_url: absoluta(ultima(r.authorPhoto?.thumbnails)?.url),
-    monto_texto: r.purchaseAmountText?.simpleText ?? null,
-    color: colorHex(esSticker ? r.backgroundColor ?? r.moneyChipBackgroundColor : r.headerBackgroundColor ?? r.bodyBackgroundColor),
-    texto: texto || null,
-    sticker_url: esSticker ? absoluta(ultima(r.sticker?.thumbnails)?.url) : null,
-    timestamp: r.timestampUsec ? Math.floor(Number(r.timestampUsec) / 1000) : Date.now(),
-  };
+}
+
+/**
+ * Meses como miembro del canal, o null si no es miembro. En un hito sale del
+ * encabezado ("Miembro durante 14 meses"); si no, de la insignia de miembro
+ * ("Miembro (2 meses)", "Miembro (1 año)", "Miembro nuevo"). Las insignias de
+ * miembro son las que traen imagen propia del canal (customThumbnail).
+ */
+function mesesDeMiembro(r) {
+  const deHito = mesesEn(textoDe(r.headerPrimaryText));
+  if (deHito != null) return deHito;
+  for (const b of r.authorBadges ?? []) {
+    const insignia = b.liveChatAuthorBadgeRenderer;
+    if (!insignia?.customThumbnail) continue;
+    const meses = mesesEn(insignia.tooltip ?? insignia.accessibility?.accessibilityData?.label);
+    if (meses != null) return meses;
+  }
+  return null;
+}
+
+function mesesEn(texto) {
+  if (!texto) return null;
+  const m = texto.match(/(\d+)\s*(mes|month|año|ano|year)/i);
+  if (m) return /año|ano|year/i.test(m[2]) ? Number(m[1]) * 12 : Number(m[1]);
+  if (/nuev|new/i.test(texto)) return 0;
+  return null;
 }
 
 function ultima(lista) {

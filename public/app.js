@@ -197,9 +197,13 @@ function tarjeta(m, indice) {
   cuerpo.className = "cuerpo";
   const meta = document.createElement("div");
   meta.className = "meta";
+  const esHito = m.tipo === "miembro";
   meta.append(
     span("autor", m.autor),
-    span("monto", m.monto_texto || (m.tipo === "sticker" ? "Sticker" : "")),
+    esHito
+      ? span("monto hito", `★ ${m.miembro_meses == null ? "Hito de miembro" : etiquetaMiembro(m.miembro_meses)}`)
+      : span("monto", m.monto_texto || (m.tipo === "sticker" ? "Sticker" : "")),
+    ...(!esHito && m.miembro_meses != null ? [span("insignia-miembro", etiquetaMiembro(m.miembro_meses))] : []),
     span("hora", formatoHora.format(new Date(m.timestamp))),
   );
   cuerpo.append(meta);
@@ -302,6 +306,18 @@ function habilitarDeslizar(envoltura, el, m) {
     seleccionar(m.id);
   });
 }
+
+// 14 -> "1 año y 2 meses"
+function textoMeses(meses) {
+  const anios = Math.floor(meses / 12);
+  const resto = meses % 12;
+  const partes = [];
+  if (anios) partes.push(`${anios} año${anios === 1 ? "" : "s"}`);
+  if (resto) partes.push(`${resto} mes${resto === 1 ? "" : "es"}`);
+  return partes.join(" y ");
+}
+
+const etiquetaMiembro = (meses) => (meses === 0 ? "Miembro nuevo" : `Miembro · ${textoMeses(meses)}`);
 
 function span(clase, texto) {
   const s = document.createElement("span");
@@ -499,6 +515,7 @@ function pintarResumen() {
   const porAutor = new Map();
   let mayor = null;
   for (const m of st.mensajes) {
+    if (m.tipo === "miembro") continue; // los hitos son gratis: no cuentan como aportes
     const a = porAutor.get(m.autor) ?? { suma: 0, n: 0 };
     a.n++;
     const monto = montos.get(m.id);
@@ -522,8 +539,9 @@ function pintarResumen() {
       : [vacioResumen("Todavía nada")]),
   );
 
-  ponerCifra("r-chats", st.mensajes.filter((m) => m.tipo !== "sticker").length);
+  ponerCifra("r-chats", st.mensajes.filter((m) => m.tipo === "superchat").length);
   ponerCifra("r-stickers", st.mensajes.filter((m) => m.tipo === "sticker").length);
+  ponerCifra("r-miembros", st.mensajes.filter((m) => m.tipo === "miembro").length);
   const ultimo = st.mensajes.at(-1);
   $("r-ritmo").textContent = ultimo ? `Último: ${formatoHora.format(new Date(ultimo.timestamp))}` : "—";
 

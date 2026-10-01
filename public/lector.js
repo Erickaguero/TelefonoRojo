@@ -89,11 +89,11 @@ export function marcarHasta(streamId, timestamp) {
   return cambiados;
 }
 
-function guardarNuevos(streamId, pagados) {
+function guardarNuevos(streamId, destacados) {
   const lista = mensajesDe(streamId);
   const vistos = new Set(lista.map((m) => m.id));
   const nuevos = [];
-  for (const p of pagados) {
+  for (const p of destacados) {
     if (vistos.has(p.id)) continue;
     vistos.add(p.id);
     const m = { ...p, stream_id: streamId, leido: false, leido_en: null };
@@ -228,7 +228,7 @@ async function sondear(s, vigente) {
   s.errores_seguidos = 0;
   s.reintentos = 0;
   guardarStreams();
-  return { nuevos: guardarNuevos(s.id, r.pagados), esperaMs: r.esperaMs };
+  return { nuevos: guardarNuevos(s.id, r.destacados), esperaMs: r.esperaMs };
 }
 
 function reconectar(s, detalle) {
