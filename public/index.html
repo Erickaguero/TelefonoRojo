@@ -2,7 +2,11 @@
 <html lang="es">
 <head>
   <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+  <meta name="theme-color" content="#ecebe8">
+  <meta name="mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-title" content="Super Chats">
+  <link rel="apple-touch-icon" href="/assets/logo.jpg">
   <title>Lector de Super Chats</title>
   <link rel="icon" href="/assets/logo.jpg">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -25,7 +29,7 @@
       </div>
     </div>
     <form id="form-url" class="form-url">
-      <input id="input-url" type="text" placeholder="Pega el link del directo de YouTube" autocomplete="off" required>
+      <input id="input-url" type="text" inputmode="url" enterkeyhint="go" autocapitalize="off" spellcheck="false" placeholder="Pega el link del directo de YouTube" autocomplete="off" required>
       <button type="submit">Escuchar</button>
     </form>
     <div class="fila">
@@ -52,7 +56,7 @@
       <button data-filtro="todos">Todos</button>
       <button data-filtro="leidos">Leídos</button>
     </div>
-    <button id="btn-primero" class="secundario">Ir al primero sin leer</button>
+    <button id="btn-primero" class="secundario" title="Ir al primero sin leer"><span class="largo">Ir al </span>primero<span class="largo"> sin leer</span></button>
   </nav>
 
   <p id="pista" class="pista" hidden>Desliza un mensaje hacia la derecha para marcarlo como leído →</p>
